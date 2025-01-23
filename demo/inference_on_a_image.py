@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import time
 
 import numpy as np
 import torch
@@ -91,6 +92,21 @@ def load_model(model_config_path, model_checkpoint_path, cpu_only=False):
     print(f"Using device: {device}")
     print(load_res)
     _ = model.eval()
+    
+    # 添加预热代码
+    if device == "mps":
+        print("Warming up MPS device...")
+        dummy_image = torch.randn(1, 3, 800, 1333, device=device)
+        # 使用正确格式的 caption
+        dummy_caption = "person . dog . cat ."  # 使用标准格式的文本提示
+        model = model.to(device)
+        with torch.no_grad():
+            try:
+                model(dummy_image, captions=[dummy_caption])
+                print("Warm up done!")
+            except Exception as e:
+                print(f"Warm up failed, but continuing anyway: {e}")
+    
     return model
 
 
@@ -115,8 +131,21 @@ def get_grounding_output(model, image, caption, box_threshold, text_threshold=No
     model = model.to(device)
     image = image.to(device)
     
+    # 记录开始时间
+    start_time = time.time()
+    
     with torch.no_grad():
         outputs = model(image[None], captions=[caption])
+        
+    # 记录模型推理时间
+    inference_time = time.time() - start_time
+    print(f"\nInference time: {inference_time:.3f} seconds")
+    print(f"FPS: {1/inference_time:.2f}")
+    print(f"Device: {device}")
+    
+    # 记录后处理开始时间
+    post_start_time = time.time()
+    
     logits = outputs["pred_logits"].sigmoid()[0]
     boxes = outputs["pred_boxes"][0]
     
@@ -171,6 +200,10 @@ def get_grounding_output(model, image, caption, box_threshold, text_threshold=No
         boxes_filt = torch.cat(all_boxes, dim=0)
         pred_phrases = all_phrases
 
+    # 记录后处理时间
+    post_process_time = time.time() - post_start_time
+    print(f"Post-processing time: {post_process_time:.3f} seconds")
+    print(f"Total time: {time.time() - start_time:.3f} seconds\n")
 
     return boxes_filt, pred_phrases
 
