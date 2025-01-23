@@ -72,10 +72,23 @@ def load_image(image_path):
 
 def load_model(model_config_path, model_checkpoint_path, cpu_only=False):
     args = SLConfig.fromfile(model_config_path)
-    args.device = "cuda" if not cpu_only else "cpu"
+    
+    # 添加 MPS 设备支持
+    if cpu_only:
+        device = "cpu"
+    else:
+        if torch.backends.mps.is_available():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+    
+    args.device = device
     model = build_model(args)
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+    print(f"Using device: {device}")
     print(load_res)
     _ = model.eval()
     return model
@@ -87,18 +100,34 @@ def get_grounding_output(model, image, caption, box_threshold, text_threshold=No
     caption = caption.strip()
     if not caption.endswith("."):
         caption = caption + "."
-    device = "cuda" if not cpu_only else "cpu"
+    
+    # 修改设备选择逻辑
+    if cpu_only:
+        device = "cpu"
+    else:
+        if torch.backends.mps.is_available():
+            device = "mps"
+        elif torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
+            
     model = model.to(device)
     image = image.to(device)
+    
     with torch.no_grad():
         outputs = model(image[None], captions=[caption])
-    logits = outputs["pred_logits"].sigmoid()[0]  # (nq, 256)
-    boxes = outputs["pred_boxes"][0]  # (nq, 4)
-
+    logits = outputs["pred_logits"].sigmoid()[0]
+    boxes = outputs["pred_boxes"][0]
+    
+    # 确保在CPU上进行后处理
+    logits = logits.to("cpu")
+    boxes = boxes.to("cpu")
+    
     # filter output
     if token_spans is None:
-        logits_filt = logits.cpu().clone()
-        boxes_filt = boxes.cpu().clone()
+        logits_filt = logits.clone()
+        boxes_filt = boxes.clone()
         filt_mask = logits_filt.max(dim=1)[0] > box_threshold
         logits_filt = logits_filt[filt_mask]  # num_filt, 256
         boxes_filt = boxes_filt[filt_mask]  # num_filt, 4
@@ -139,7 +168,7 @@ def get_grounding_output(model, image, caption, box_threshold, text_threshold=No
                 all_phrases.extend([phrase + f"({str(logit.item())[:4]})" for logit in logit_phr_num])
             else:
                 all_phrases.extend([phrase for _ in range(len(filt_mask))])
-        boxes_filt = torch.cat(all_boxes, dim=0).cpu()
+        boxes_filt = torch.cat(all_boxes, dim=0)
         pred_phrases = all_phrases
 
 
