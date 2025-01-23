@@ -144,3 +144,4 @@ grounding/version.py
 
 vis/
 tmp/
+weights/groundingdino_swint_ogc.pth
