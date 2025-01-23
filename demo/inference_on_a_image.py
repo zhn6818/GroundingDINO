@@ -74,11 +74,11 @@ def load_image(image_path):
 def load_model(model_config_path, model_checkpoint_path, cpu_only=False):
     args = SLConfig.fromfile(model_config_path)
     
-    # 添加 MPS 设备支持
+    # 设备选择逻辑
     if cpu_only:
         device = "cpu"
     else:
-        if torch.backends.mps.is_available():
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             device = "mps"
         elif torch.cuda.is_available():
             device = "cuda"
@@ -117,11 +117,11 @@ def get_grounding_output(model, image, caption, box_threshold, text_threshold=No
     if not caption.endswith("."):
         caption = caption + "."
     
-    # 修改设备选择逻辑
+    # 设备选择逻辑
     if cpu_only:
         device = "cpu"
     else:
-        if torch.backends.mps.is_available():
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             device = "mps"
         elif torch.cuda.is_available():
             device = "cuda"
